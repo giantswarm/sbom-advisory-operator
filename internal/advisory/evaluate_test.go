@@ -90,3 +90,23 @@ func TestEvaluateNameCaseInsensitive(t *testing.T) {
 		t.Errorf("rule = %q, want python-certifi", r.Rule)
 	}
 }
+
+func TestEvaluateMessages(t *testing.T) {
+	const title = "eMudhra intermediate CA compromise (October 2026)"
+	cases := []struct {
+		d    Distro
+		p    Package
+		want string
+	}{
+		{Distro{"debian", "13"}, Package{"ca-certificates", "20250419", "deb"}, "ca-certificates 20250419 is below the fixed version 20250419+deb13u1 for debian 13 (" + title + ")"},
+		{Distro{}, Package{"stdlib", "go1.27.2", "go-module"}, "stdlib go1.27.2 is below the fixed version 1.27.3 for series 1.27 (" + title + ")"},
+		{Distro{}, Package{"stdlib", "go1.25.9", "go-module"}, "stdlib go1.25.9 has no fixed release in series 1.25; rebuild on a fixed series (" + title + ")"},
+		{Distro{"debian", "11"}, Package{"ca-certificates", "20250419~deb12u1~deb11u1", "deb"}, "ca-certificates 20250419~deb12u1~deb11u1: no fixed version known for debian 11 (" + title + ")"},
+		{Distro{}, Package{"certifi", "2026.10.19", "python"}, "certifi 2026.10.19 is at or above the fixed version 2026.10.19 (" + title + ")"},
+	}
+	for _, tc := range cases {
+		if got := evalOne(t, tc.d, tc.p).Message; got != tc.want {
+			t.Errorf("%v %v:\n got  %q\n want %q", tc.d, tc.p, got, tc.want)
+		}
+	}
+}

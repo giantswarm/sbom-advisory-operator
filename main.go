@@ -4,14 +4,23 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
+	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	toolscache "k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
+	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
+	"github.com/giantswarm/sbom-advisory-operator/internal/controller"
 )
 
 var (
@@ -21,6 +30,20 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(kubescapev1beta1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha2.AddToScheme(scheme))
+}
+
+// watchListSemanticsDisabledListerWatcherWrapper tells client-go not to use WatchList streaming.
+// kubescape storage accepts a watch-list request and then never sends the initial events, so an
+// informer using the protocol never syncs (kubescape/storage#320). Classic list+watch is used for
+// every informer; the other watched kinds lose nothing by it.
+type watchListSemanticsDisabledListerWatcherWrapper struct {
+	toolscache.ListerWatcher
+}
+
+func (w watchListSemanticsDisabledListerWatcherWrapper) IsWatchListSemanticsUnSupported() bool {
+	return true
 }
 
 func main() {
@@ -29,6 +52,7 @@ func main() {
 	var enableLeaderElection bool
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var discoveryInterval time.Duration
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -36,6 +60,7 @@ func main() {
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", false, "If set the metrics endpoint is served securely.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics server.")
+	flag.DurationVar(&discoveryInterval, "kubescape-discovery-interval", 60*time.Second, "How often to look for the kubescape storage API while it is absent.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -49,7 +74,8 @@ func main() {
 		tlsOpts = append(tlsOpts, func(c *tls.Config) { c.NextProtos = []string{"http/1.1"} })
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress:   metricsAddr,
@@ -59,6 +85,11 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "sbom-advisory-operator.giantswarm.io",
+		Cache: cache.Options{
+			NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
+				return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -74,8 +105,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+
+	reconciler := &controller.SBOMSyftReconciler{
+		Client:     mgr.GetClient(),
+		Reader:     mgr.GetAPIReader(),
+		Advisories: advisory.Default,
+		Now:        metav1.Now,
+	}
+
+	// The controller is registered only once the kubescape storage API exists, so the pod stays
+	// healthy on clusters without kubescape instead of crashlooping.
+	go func() {
+		if err := controller.WaitForKubescapeAPI(ctx, cfg, discoveryInterval, setupLog); err != nil {
+			return
+		}
+		if err := reconciler.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "sbomsyft")
+			os.Exit(1)
+		}
+		setupLog.Info("sbomsyft controller registered")
+	}()
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

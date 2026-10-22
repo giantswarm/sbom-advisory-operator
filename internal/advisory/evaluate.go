@@ -106,7 +106,7 @@ func (r *Rule) judge(res *Result, d Distro, title string) {
 	if !ok {
 		if r.MissingSeries == missingSeriesFail {
 			res.Verdict = VerdictFail
-			res.Message = fmt.Sprintf("%s %s has no fixed release in its series %s; rebuild on a fixed series (%s)", res.Package.Name, res.Package.Version, label, title)
+			res.Message = fmt.Sprintf("%s %s has no fixed release in %s; rebuild on a fixed series (%s)", res.Package.Name, res.Package.Version, label, title)
 			return
 		}
 		res.Verdict = VerdictUnknown
