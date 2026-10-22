@@ -23,6 +23,10 @@ without a CVE. The built-in advisory covers the eMudhra intermediate CA compromi
 4. On clusters without kubescape the operator keeps its health probes up and looks for the API every
    minute instead of crashlooping.
 
+In the policy-reporter UI the source appears as **Sbom-advisory-operator** with one namespace-scoped
+resource of kind `SBOMSyft` per image under the `kubescape` namespace (verified on graveler, October
+2026); the UI's workload mapping does not apply, so results are found by image name.
+
 Read the reports:
 
 ```sh
