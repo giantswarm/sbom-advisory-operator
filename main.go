@@ -7,6 +7,7 @@ import (
 	"time"
 
 	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -14,12 +15,12 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
-	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
 	"github.com/giantswarm/sbom-advisory-operator/internal/controller"
 )
 
@@ -53,6 +54,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var discoveryInterval time.Duration
+	var advisoriesNamespace, advisoriesName, advisoriesKey string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -61,6 +63,9 @@ func main() {
 	flag.BoolVar(&secureMetrics, "metrics-secure", false, "If set the metrics endpoint is served securely.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics server.")
 	flag.DurationVar(&discoveryInterval, "kubescape-discovery-interval", 60*time.Second, "How often to look for the kubescape storage API while it is absent.")
+	flag.StringVar(&advisoriesNamespace, "advisories-configmap-namespace", os.Getenv("POD_NAMESPACE"), "Namespace of the advisory ConfigMap (defaults to $POD_NAMESPACE).")
+	flag.StringVar(&advisoriesName, "advisories-configmap-name", "sbom-advisory-operator-advisories", "Name of the advisory ConfigMap.")
+	flag.StringVar(&advisoriesKey, "advisories-configmap-key", "advisories.yaml", "Key of the advisory ConfigMap holding the advisories YAML.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -86,6 +91,10 @@ func main() {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "sbom-advisory-operator.giantswarm.io",
 		Cache: cache.Options{
+			// Only the advisory ConfigMap's namespace is watched, so a namespaced Role suffices.
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.ConfigMap{}: {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
+			},
 			NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
 				return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)
 			},
@@ -107,11 +116,13 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
+	source := controller.NewAdvisorySource(advisoriesNamespace, advisoriesName, advisoriesKey, mgr.GetEventRecorderFor("sbom-advisory-operator"))
 	reconciler := &controller.SBOMSyftReconciler{
 		Client:     mgr.GetClient(),
 		Reader:     mgr.GetAPIReader(),
-		Advisories: advisory.Default,
+		Advisories: source.Current,
 		Now:        metav1.Now,
+		Source:     source,
 	}
 
 	// The controller is registered only once the kubescape storage API exists, so the pod stays

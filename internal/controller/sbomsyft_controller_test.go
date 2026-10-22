@@ -78,7 +78,7 @@ func TestReconcileUpdatesReport(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(readySBOM("a", [3]string{"ca-certificates", "20250419", "deb"}), stale).Build()
 	reconcileOnce(t, newReconciler(c, c), "a")
 	pr, _ := getReport(t, c, "a")
-	if len(pr.Results) != 1 || pr.Results[0].Policy != "emudhra-2026-10" {
+	if len(pr.Results) != 1 || pr.Results[0].Policy != defaultAdvisoryID {
 		t.Fatalf("results = %+v", pr.Results)
 	}
 }

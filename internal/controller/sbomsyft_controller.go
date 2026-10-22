@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,7 +13,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
@@ -27,6 +31,8 @@ type SBOMSyftReconciler struct {
 	Advisories func() *advisory.Set
 	// Now stamps results.
 	Now func() metav1.Time
+	// Source, when set, is reloaded from its ConfigMap and every SBOMSyft is re-queued on change.
+	Source *AdvisorySource
 }
 
 // Reconcile evaluates the SBOMSyft named by req and upserts or deletes its PolicyReport.
@@ -105,13 +111,52 @@ func (r *SBOMSyftReconciler) deleteReport(ctx context.Context, req ctrl.Request)
 	return nil
 }
 
+// enqueueAllSBOMs reloads the advisory ConfigMap and returns a request for every SBOMSyft, so a
+// changed advisory set is applied everywhere. ConfigMaps other than the configured one are ignored.
+func (r *SBOMSyftReconciler) enqueueAllSBOMs(ctx context.Context, obj client.Object) []reconcile.Request {
+	if r.Source == nil || !r.Source.Matches(obj.GetNamespace(), obj.GetName()) {
+		return nil
+	}
+	logger := log.FromContext(ctx)
+	cm := &corev1.ConfigMap{}
+	switch err := r.Get(ctx, client.ObjectKeyFromObject(obj), cm); {
+	case apierrors.IsNotFound(err):
+		r.Source.Reset()
+	case err != nil:
+		logger.Error(err, "reading advisory ConfigMap")
+		return nil
+	default:
+		if err := r.Source.Load(cm); err != nil {
+			logger.Error(err, "advisory ConfigMap rejected, keeping the previous set")
+		}
+	}
+
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(kubescapev1beta1.SchemeGroupVersion.WithKind("SBOMSyftList"))
+	if err := r.List(ctx, list); err != nil {
+		logger.Error(err, "listing SBOMSyft metadata")
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(list.Items))
+	for _, item := range list.Items {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&item)})
+	}
+	return reqs
+}
+
 // SetupWithManager registers the controller: SBOMSyft is watched as metadata only so the cache
-// never holds SBOM bodies.
+// never holds SBOM bodies, and the advisory ConfigMap re-queues everything on change.
 func (r *SBOMSyftReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		Named("sbomsyft").
 		For(&kubescapev1beta1.SBOMSyft{}, builder.OnlyMetadata).
 		Owns(&v1alpha2.PolicyReport{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
-		Complete(r)
+		WithOptions(controller.Options{MaxConcurrentReconciles: 2})
+	if r.Source != nil {
+		b = b.Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueAllSBOMs),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return r.Source.Matches(obj.GetNamespace(), obj.GetName())
+			})))
+	}
+	return b.Complete(r)
 }
