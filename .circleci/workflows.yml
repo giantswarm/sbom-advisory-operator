@@ -217,6 +217,27 @@ workflows:
             - main
             - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
 
+    # Branch chart push (opt-in): publish the dev chart after tests + the amd64
+    # branch image, coupled with push-to-registries above.
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: push-chart
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: sbom-advisory-operator
+        # `appVersion` is the version of the packaged application, and this chart
+        # packages an app built elsewhere, so that app's version is what
+        # Chart.yaml declares. Keep it; the chart version is still stamped.
+        override_app_version: false
+        requires:
+        - execute-chart-tests
+        filters:
+          branches:
+            ignore:
+            - main
+            - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
+
     # Tag: push the chart after build-chart (+ the gsoci image). The chart
     # tests ran on the branch (execute-chart-tests) and the tag is cut from the
     # merge commit of a PR whose branch run tested this tree, so they are not
