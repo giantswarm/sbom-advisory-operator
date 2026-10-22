@@ -60,8 +60,9 @@ func (r *SBOMSyftReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *SBOMSyftReconciler) upsertReport(ctx context.Context, desired *v1alpha2.PolicyReport) error {
+	// The cache holds PolicyReport metadata only; the body comes from the API reader.
 	existing := &v1alpha2.PolicyReport{}
-	err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+	err := r.Reader.Get(ctx, client.ObjectKeyFromObject(desired), existing)
 	if apierrors.IsNotFound(err) {
 		if err := r.Create(ctx, desired); err != nil {
 			return fmt.Errorf("creating PolicyReport %s: %w", client.ObjectKeyFromObject(desired), err)
@@ -145,12 +146,13 @@ func (r *SBOMSyftReconciler) enqueueAllSBOMs(ctx context.Context, obj client.Obj
 }
 
 // SetupWithManager registers the controller: SBOMSyft is watched as metadata only so the cache
-// never holds SBOM bodies, and the advisory ConfigMap re-queues everything on change.
+// never holds SBOM bodies, PolicyReports likewise so a cluster full of Kyverno reports costs only
+// their metadata, and the advisory ConfigMap re-queues everything on change.
 func (r *SBOMSyftReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		Named("sbomsyft").
 		For(&kubescapev1beta1.SBOMSyft{}, builder.OnlyMetadata).
-		Owns(&v1alpha2.PolicyReport{}).
+		Owns(&v1alpha2.PolicyReport{}, builder.OnlyMetadata).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 2})
 	if r.Source != nil {
 		b = b.Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueAllSBOMs),

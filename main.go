@@ -9,7 +9,6 @@ import (
 	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -49,13 +48,14 @@ func (w watchListSemanticsDisabledListerWatcherWrapper) IsWatchListSemanticsUnSu
 }
 
 // cacheOptions bounds what the manager caches: ConfigMaps only in the advisory namespace (so a
-// namespaced Role suffices) and PolicyReports only those this operator wrote (a cluster running
-// Kyverno holds thousands of other reports). The WatchList opt-out applies to every informer.
+// namespaced Role suffices). PolicyReports are deliberately absent: a ByObject entry is resolved
+// through the RESTMapper when the manager is created and would fail on a cluster without the
+// PolicyReport CRD; the controller watches them as metadata only instead and reads bodies
+// uncached. The WatchList opt-out applies to every informer.
 func cacheOptions(advisoriesNamespace string) cache.Options {
 	return cache.Options{
 		ByObject: map[client.Object]cache.ByObject{
-			&corev1.ConfigMap{}:      {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
-			&v1alpha2.PolicyReport{}: {Label: labels.SelectorFromSet(labels.Set{"app.kubernetes.io/managed-by": controller.Source})},
+			&corev1.ConfigMap{}: {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
 		},
 		NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
 			return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)

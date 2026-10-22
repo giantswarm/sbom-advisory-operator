@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
@@ -182,4 +185,41 @@ func TestReconcile_UpdatesReportWhenSBOMChanges(t *testing.T) {
 	report, err := getReport(t, c, "app")
 	require.NoError(t, err)
 	assert.Equal(t, v1alpha2.PolicyReportSummary{Pass: 1}, report.Summary)
+}
+
+// recordingReader counts the Get calls per object type so a test can tell which reads bypassed
+// the cache.
+type recordingReader struct {
+	client.Reader
+	gets map[string]int
+}
+
+func (r *recordingReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	r.gets[fmt.Sprintf("%T", obj)]++
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
+func TestReconcile_ReadsTheExistingReportThroughTheUncachedReader(t *testing.T) {
+	t.Parallel()
+
+	// arrange: the cache would only ever hold PolicyReport metadata, so the body must come from
+	// the API reader.
+	sbom := newSBOM("image")
+	sbom.Annotations[annotationStatus] = statusReady
+	addPackage(sbom, advisory.Package{Name: "certifi", Version: "2026.1.1", Type: "python"})
+	stale := &v1alpha2.PolicyReport{ObjectMeta: metav1.ObjectMeta{Name: "image", Namespace: sbomNamespace}}
+	c := newFakeClient(t, sbom, stale)
+	reader := &recordingReader{Reader: c, gets: map[string]int{}}
+	r := newTestReconciler(c, certifiAdvisory("2026.10.19"))
+	r.Reader = reader
+
+	// act
+	_, err := r.Reconcile(t.Context(), requestFor("image"))
+
+	// assert
+	require.NoError(t, err)
+	assert.Equal(t, 1, reader.gets["*v1alpha2.PolicyReport"], "existing report must be read through the uncached reader")
+	report, err := getReport(t, c, "image")
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Summary.Fail)
 }

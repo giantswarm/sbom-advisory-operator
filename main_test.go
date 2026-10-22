@@ -6,11 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
-	"github.com/giantswarm/sbom-advisory-operator/internal/controller"
 )
 
 // byObject returns the cache restriction registered for the given object type, keyed by type
@@ -37,18 +35,16 @@ func TestCacheOptions_WatchesConfigMapsOnlyInTheAdvisoryNamespace(t *testing.T) 
 	assert.Contains(t, by.Namespaces, "ops")
 }
 
-func TestCacheOptions_CachesOnlyOwnPolicyReports(t *testing.T) {
+func TestCacheOptions_DoesNotResolvePolicyReportsAtStartup(t *testing.T) {
 	t.Parallel()
 
 	// act
 	opts := cacheOptions("ops")
 
-	// assert
-	by, ok := byObject[*v1alpha2.PolicyReport](opts)
-	require.True(t, ok, "PolicyReport informer must be restricted")
-	require.NotNil(t, by.Label)
-	want := labels.SelectorFromSet(labels.Set{"app.kubernetes.io/managed-by": controller.Source})
-	assert.Equal(t, want.String(), by.Label.String())
+	// assert: a ByObject entry is resolved through the RESTMapper when the manager is created,
+	// which fails on a cluster without the PolicyReport CRD (kind in the chart tests).
+	_, ok := byObject[*v1alpha2.PolicyReport](opts)
+	assert.False(t, ok, "PolicyReport must not be in ByObject")
 }
 
 func TestCacheOptions_DisablesWatchListForEveryInformer(t *testing.T) {
