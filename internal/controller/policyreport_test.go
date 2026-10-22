@@ -3,76 +3,159 @@ package controller
 import (
 	"testing"
 
+	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/giantswarm/sbom-advisory-operator/api/wgpolicyk8s.io/v1alpha2"
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
 )
 
-func TestBuildPolicyReport(t *testing.T) {
-	s := sbomFixture("img-a", map[string]string{"kubescape.io/image-tag": "registry/img:1"}, "debian", "13")
-	results := []advisory.Result{
-		{AdvisoryID: "emudhra-2026-10", Severity: "high", Category: "Trust Store", Reference: "https://example", Rule: "go-stdlib", Verdict: advisory.VerdictFail, Package: advisory.Package{Name: "stdlib", Version: "go1.26.6", Type: "go-module"}, Series: "1.26", Floor: "1.26.10", Message: "below"},
-		{AdvisoryID: "emudhra-2026-10", Severity: "high", Category: "Trust Store", Rule: "python-certifi", Verdict: advisory.VerdictPass, Package: advisory.Package{Name: "certifi", Version: "2026.10.19", Type: "python"}, Series: "*", Floor: "2026.10.19", Message: "ok"},
-		{AdvisoryID: "emudhra-2026-10", Severity: "high", Category: "Trust Store", Rule: "os-ca-certificates-rpm", Verdict: advisory.VerdictUnknown, Package: advisory.Package{Name: "ca-certificates", Version: "2025.2", Type: "rpm"}, Series: "9.8", Message: "unknown"},
-	}
-	now := metav1.Now()
-	pr := BuildPolicyReport(s, results, now)
+func TestBuildPolicyReport_IsOwnedByTheSBOM(t *testing.T) {
+	t.Parallel()
 
-	if pr.Name != "img-a" || pr.Namespace != "kubescape" {
-		t.Errorf("name/namespace = %s/%s", pr.Namespace, pr.Name)
-	}
-	if len(pr.OwnerReferences) != 1 || pr.OwnerReferences[0].UID != s.UID || pr.OwnerReferences[0].Controller == nil || !*pr.OwnerReferences[0].Controller {
-		t.Errorf("owner references = %+v", pr.OwnerReferences)
-	}
-	if pr.Labels["app.kubernetes.io/managed-by"] != Source {
-		t.Errorf("labels = %v", pr.Labels)
-	}
-	if pr.Scope == nil || pr.Scope.Kind != "SBOMSyft" || pr.Scope.Name != "img-a" || pr.Scope.UID != s.UID {
-		t.Errorf("scope = %+v", pr.Scope)
-	}
-	if len(pr.Results) != 3 {
-		t.Fatalf("len(results) = %d", len(pr.Results))
-	}
-	r0, r1, r2 := pr.Results[0], pr.Results[1], pr.Results[2]
-	if r0.Result != v1alpha2.StatusFail || r0.Severity != "high" || r0.Source != "sbom-advisory-operator" || r0.Policy != "emudhra-2026-10" || r0.Rule != "go-stdlib" {
-		t.Errorf("results[0] = %+v", r0)
-	}
-	if r1.Result != v1alpha2.StatusPass || r1.Severity != "" {
-		t.Errorf("results[1] = %+v", r1)
-	}
-	if r2.Result != v1alpha2.StatusWarn {
-		t.Errorf("results[2] = %+v", r2)
-	}
-	if r0.Properties["floor"] != "1.26.10" || r0.Properties["image"] != "registry/img:1" || r0.Properties["distro"] != "debian 13" || r0.Properties["reference"] != "https://example" {
-		t.Errorf("results[0].Properties = %v", r0.Properties)
-	}
-	if r0.Timestamp.Seconds != now.Unix() {
-		t.Errorf("timestamp = %+v, want %d", r0.Timestamp, now.Unix())
-	}
-	want := v1alpha2.PolicyReportSummary{Pass: 1, Fail: 1, Warn: 1}
-	if pr.Summary != want {
-		t.Errorf("summary = %+v, want %+v", pr.Summary, want)
-	}
+	// arrange
+	sbom := newSBOM("app")
+
+	// act
+	report := BuildPolicyReport(sbom, nil, metav1.Now())
+
+	// assert
+	assert.Equal(t, "app", report.Name)
+	assert.Equal(t, sbomNamespace, report.Namespace)
+	assert.Equal(t, map[string]string{"app.kubernetes.io/managed-by": "sbom-advisory-operator"}, report.Labels)
+	assert.Equal(t, []metav1.OwnerReference{{
+		APIVersion: "spdx.softwarecomposition.kubescape.io/v1beta1",
+		Kind:       "SBOMSyft",
+		Name:       "app",
+		UID:        "uid-app",
+		Controller: ptr.To(true),
+	}}, report.OwnerReferences)
+	assert.Equal(t, &corev1.ObjectReference{
+		APIVersion: "spdx.softwarecomposition.kubescape.io/v1beta1",
+		Kind:       "SBOMSyft",
+		Namespace:  sbomNamespace,
+		Name:       "app",
+		UID:        "uid-app",
+	}, report.Scope)
 }
 
-func TestBuildUnavailablePolicyReport(t *testing.T) {
-	s := sbomFixture("img-b", map[string]string{"kubescape.io/image-tag": "registry/img:2", "kubescape.io/status": "too-large"}, "", "")
-	pr := BuildUnavailablePolicyReport(s, "too-large", metav1.Now())
-	if len(pr.Results) != 1 {
-		t.Fatalf("len(results) = %d", len(pr.Results))
+func TestBuildPolicyReport_DescribesFailedPackage(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	sbom := newSBOM("app")
+	sbom.Annotations["kubescape.io/image-tag"] = "registry/app:1.0.0"
+	sbom.Spec.Syft.Distro = kubescapev1beta1.LinuxRelease{ID: "debian", VersionID: "13"}
+	failed := advisory.Result{
+		AdvisoryID: "test-advisory",
+		Severity:   "high",
+		Category:   "Trust Store",
+		Reference:  "https://example.com/advisory",
+		Rule:       "go-stdlib",
+		Verdict:    advisory.VerdictFail,
+		Package:    advisory.Package{Name: "stdlib", Version: "go1.26.6", Type: "go-module"},
+		Series:     "1.26",
+		Floor:      "1.26.10",
+		Message:    "stdlib go1.26.6 is below the fixed version 1.26.10",
 	}
-	r := pr.Results[0]
-	if r.Rule != "sbom-unavailable" || r.Policy != "sbom-advisory-operator" || r.Result != v1alpha2.StatusError || r.Category != "Trust Store" {
-		t.Errorf("result = %+v", r)
+
+	// act
+	report := BuildPolicyReport(sbom, []advisory.Result{failed}, metav1.Unix(1_700_000_000, 0))
+
+	// assert
+	assert.Equal(t, []v1alpha2.PolicyReportResult{{
+		Source:    "sbom-advisory-operator",
+		Policy:    "test-advisory",
+		Rule:      "go-stdlib",
+		Category:  "Trust Store",
+		Severity:  v1alpha2.SeverityHigh,
+		Timestamp: metav1.Timestamp{Seconds: 1_700_000_000},
+		Result:    v1alpha2.StatusFail,
+		Message:   "stdlib go1.26.6 is below the fixed version 1.26.10",
+		Properties: map[string]string{
+			"image":     "registry/app:1.0.0",
+			"package":   "stdlib",
+			"version":   "go1.26.6",
+			"type":      "go-module",
+			"series":    "1.26",
+			"floor":     "1.26.10",
+			"distro":    "debian 13",
+			"reference": "https://example.com/advisory",
+		},
+	}}, report.Results)
+}
+
+func TestBuildPolicyReport_PassedResultHasNoSeverity(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	passed := advisory.Result{AdvisoryID: "test-advisory", Severity: "high", Verdict: advisory.VerdictPass}
+
+	// act
+	report := BuildPolicyReport(newSBOM("app"), []advisory.Result{passed}, metav1.Now())
+
+	// assert
+	require.Len(t, report.Results, 1)
+	assert.Equal(t, v1alpha2.StatusPass, report.Results[0].Result)
+	assert.Empty(t, report.Results[0].Severity)
+}
+
+func TestBuildPolicyReport_UnknownVerdictBecomesWarn(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	unknown := advisory.Result{AdvisoryID: "test-advisory", Verdict: advisory.VerdictUnknown}
+
+	// act
+	report := BuildPolicyReport(newSBOM("app"), []advisory.Result{unknown}, metav1.Now())
+
+	// assert
+	require.Len(t, report.Results, 1)
+	assert.Equal(t, v1alpha2.StatusWarn, report.Results[0].Result)
+}
+
+func TestBuildPolicyReport_SummaryCountsEachVerdict(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	results := []advisory.Result{
+		{Verdict: advisory.VerdictFail},
+		{Verdict: advisory.VerdictFail},
+		{Verdict: advisory.VerdictPass},
+		{Verdict: advisory.VerdictUnknown},
 	}
-	if r.Message != "SBOM is not evaluable (status: too-large)" {
-		t.Errorf("message = %q", r.Message)
-	}
-	if r.Properties["status"] != "too-large" || r.Properties["image"] != "registry/img:2" {
-		t.Errorf("properties = %v", r.Properties)
-	}
-	if (pr.Summary != v1alpha2.PolicyReportSummary{Error: 1}) {
-		t.Errorf("summary = %+v", pr.Summary)
-	}
+
+	// act
+	report := BuildPolicyReport(newSBOM("app"), results, metav1.Now())
+
+	// assert
+	assert.Equal(t, v1alpha2.PolicyReportSummary{Fail: 2, Pass: 1, Warn: 1}, report.Summary)
+}
+
+func TestBuildUnavailablePolicyReport_HasSingleErrorResult(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	sbom := newSBOM("app")
+	sbom.Annotations["kubescape.io/image-tag"] = "registry/app:1.0.0"
+
+	// act
+	report := BuildUnavailablePolicyReport(sbom, "too-large", metav1.Unix(1_700_000_000, 0))
+
+	// assert
+	assert.Equal(t, []v1alpha2.PolicyReportResult{{
+		Source:     "sbom-advisory-operator",
+		Policy:     "sbom-advisory-operator",
+		Rule:       "sbom-unavailable",
+		Category:   "Trust Store",
+		Timestamp:  metav1.Timestamp{Seconds: 1_700_000_000},
+		Result:     v1alpha2.StatusError,
+		Message:    "SBOM is not evaluable (status: too-large)",
+		Properties: map[string]string{"image": "registry/app:1.0.0", "status": "too-large"},
+	}}, report.Results)
+	assert.Equal(t, v1alpha2.PolicyReportSummary{Error: 1}, report.Summary)
 }

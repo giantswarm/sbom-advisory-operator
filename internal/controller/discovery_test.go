@@ -9,22 +9,37 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clienttesting "k8s.io/client-go/testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestWaitForKubescapeAPI(t *testing.T) {
-	present := &fakediscovery.FakeDiscovery{Fake: &clienttesting.Fake{Resources: []*metav1.APIResourceList{{
+func TestWaitForKubescapeAPI_ReturnsWhenSBOMSyftIsServed(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	discovery := &fakediscovery.FakeDiscovery{Fake: &clienttesting.Fake{Resources: []*metav1.APIResourceList{{
 		GroupVersion: "spdx.softwarecomposition.kubescape.io/v1beta1",
 		APIResources: []metav1.APIResource{{Name: "sbomsyfts", Kind: "SBOMSyft"}},
 	}}}}
-	if err := waitForKubescapeAPIWith(context.Background(), present, time.Millisecond, logr.Discard()); err != nil {
-		t.Fatalf("present: unexpected error %v", err)
-	}
 
-	absent := &fakediscovery.FakeDiscovery{Fake: &clienttesting.Fake{}}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	// act
+	err := waitForKubescapeAPIWith(t.Context(), discovery, time.Millisecond, logr.Discard())
+
+	// assert
+	assert.NoError(t, err)
+}
+
+func TestWaitForKubescapeAPI_KeepsPollingUntilContextEnds(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	withoutKubescape := &fakediscovery.FakeDiscovery{Fake: &clienttesting.Fake{}}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
-	err := waitForKubescapeAPIWith(ctx, absent, 5*time.Millisecond, logr.Discard())
-	if err == nil || ctx.Err() == nil {
-		t.Fatalf("absent: expected the context error, got %v", err)
-	}
+
+	// act
+	err := waitForKubescapeAPIWith(ctx, withoutKubescape, 5*time.Millisecond, logr.Discard())
+
+	// assert
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }

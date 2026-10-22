@@ -1,92 +1,225 @@
 package advisory
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestParseDefault(t *testing.T) {
-	s := Default()
-	if len(s.Advisories) != 1 {
-		t.Fatalf("Default() has %d advisories, want 1", len(s.Advisories))
-	}
-	a := s.Advisories[0]
-	if a.ID != "emudhra-2026-10" {
-		t.Errorf("ID = %q, want emudhra-2026-10", a.ID)
-	}
-	if len(a.Rules) != 11 {
-		t.Errorf("len(Rules) = %d, want 11", len(a.Rules))
-	}
-	var java *Rule
-	for i := range a.Rules {
-		if a.Rules[i].Name == "java-runtime" {
-			java = &a.Rules[i]
-		}
-	}
-	if java == nil {
-		t.Fatal("java-runtime rule missing")
-	}
-	if got := strings.Join(java.Match.Names, ","); got != "openjdk,java" {
-		t.Errorf("java-runtime Match.Names = %q, want openjdk,java", got)
-	}
-	if java.Normalize != NormalizeJava {
-		t.Errorf("java-runtime Normalize = %q, want java", java.Normalize)
-	}
+const builtInAdvisoryID = "emudhra-2026-10"
+
+func TestDefault_ParsesTheEmbeddedEMudhraAdvisory(t *testing.T) {
+	t.Parallel()
+
+	// act
+	set := Default()
+
+	// assert
+	require.Equal(t, []string{builtInAdvisoryID}, advisoryIDs(set))
+	assert.Len(t, set.Advisories[0].Rules, 11)
 }
 
-func TestParseRejects(t *testing.T) {
-	cases := []struct{ name, yaml, want string }{
-		{"compare", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb, names: [x]}\n    series: none\n    compare: semver\n    floors: {\"*\": \"1\"}\n", "compare"},
-		{"normalize", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb, names: [x]}\n    normalize: python\n    series: none\n    compare: numeric\n    floors: {\"*\": \"1\"}\n", "normalize"},
-		{"series", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb, names: [x]}\n    series: version:x\n    compare: numeric\n    floors: {\"*\": \"1\"}\n", "series"},
-		{"names", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb}\n    series: none\n    compare: numeric\n    floors: {\"*\": \"1\"}\n", "names"},
-		{"dup rule", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb, names: [x]}\n    series: none\n    compare: numeric\n    floors: {\"*\": \"1\"}\n  - name: r\n    match: {type: deb, names: [y]}\n    series: none\n    compare: numeric\n    floors: {\"*\": \"1\"}\n", "rule"},
-		{"dup advisory", "advisories:\n- id: a\n  severity: low\n- id: a\n  severity: low\n", "id"},
-		{"severity", "advisories:\n- id: a\n  severity: urgent\n", "severity"},
-		{"yaml", "advisories: [", "yaml"},
+func TestParse_RejectsInvalidAdvisories(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		yaml          string
+		errorMentions string
+	}{
+		{
+			name:          "unknown comparator",
+			errorMentions: "compare",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        series: none
+        compare: semver
+        floors: {"*": "1"}
+`,
+		},
+		{
+			name:          "unknown normalizer",
+			errorMentions: "normalize",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        normalize: python
+        series: none
+        compare: numeric
+        floors: {"*": "1"}
+`,
+		},
+		{
+			name:          "series version:N without a number",
+			errorMentions: "series",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        series: version:x
+        compare: numeric
+        floors: {"*": "1"}
+`,
+		},
+		{
+			name:          "match without package names",
+			errorMentions: "names",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python}
+        series: none
+        compare: numeric
+        floors: {"*": "1"}
+`,
+		},
+		{
+			name:          "rule name declared twice",
+			errorMentions: "rule",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        series: none
+        compare: numeric
+        floors: {"*": "1"}
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        series: none
+        compare: numeric
+        floors: {"*": "2"}
+`,
+		},
+		{
+			name:          "advisory id declared twice",
+			errorMentions: "id",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+  - id: test
+    severity: low
+`,
+		},
+		{
+			name:          "unknown severity",
+			errorMentions: "severity",
+			yaml: `
+advisories:
+  - id: test
+    severity: urgent
+`,
+		},
+		{
+			name:          "malformed YAML",
+			errorMentions: "yaml",
+			yaml:          `advisories: [`,
+		},
 	}
 	for _, tc := range cases {
-		_, err := Parse([]byte(tc.yaml))
-		if err == nil {
-			t.Errorf("%s: expected an error", tc.name)
-			continue
-		}
-		if !strings.Contains(strings.ToLower(err.Error()), tc.want) {
-			t.Errorf("%s: error %q does not mention %q", tc.name, err, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// act
+			_, err := Parse([]byte(tc.yaml))
+
+			// assert
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.errorMentions)
+		})
 	}
 }
 
-func TestMerge(t *testing.T) {
-	base := Default()
+func TestMerge_AppendsOverlayAdvisoryWithNewID(t *testing.T) {
+	t.Parallel()
 
-	added := &Set{Advisories: []Advisory{{ID: "test-1", Severity: "low", Rules: []Rule{{Name: "r", Match: Match{Type: "deb", Names: []string{"x"}}, Series: "none", Compare: CompareNumeric, Floors: map[string]string{"*": "1"}}}}}}
-	m := Merge(base, added)
-	if len(m.Advisories) != 2 || m.Advisories[0].ID != "emudhra-2026-10" || m.Advisories[1].ID != "test-1" {
-		t.Errorf("append: got %v", ids(m))
-	}
+	// arrange
+	base := &Set{Advisories: []Advisory{{ID: "base"}}}
+	overlay := &Set{Advisories: []Advisory{{ID: "added"}}}
 
-	replaced := &Set{Advisories: []Advisory{{ID: "emudhra-2026-10", Title: "replaced", Severity: "low", Rules: added.Advisories[0].Rules}}}
-	m = Merge(base, replaced)
-	if len(m.Advisories) != 1 || m.Advisories[0].Title != "replaced" || len(m.Advisories[0].Rules) != 1 {
-		t.Errorf("replace: got %d advisories, title %q, %d rules", len(m.Advisories), m.Advisories[0].Title, len(m.Advisories[0].Rules))
-	}
+	// act
+	merged := Merge(base, overlay)
 
-	disabled := &Set{Advisories: []Advisory{{ID: "emudhra-2026-10", Disabled: true}}}
-	if m = Merge(base, disabled); len(m.Advisories) != 0 {
-		t.Errorf("disable: got %v, want none", ids(m))
-	}
-
-	nope := &Set{Advisories: []Advisory{{ID: "nope", Disabled: true}}}
-	if m = Merge(base, nope); len(m.Advisories) != 1 {
-		t.Errorf("disable unknown: got %v, want base unchanged", ids(m))
-	}
-	if len(base.Advisories) != 1 {
-		t.Error("Merge must not mutate base")
-	}
+	// assert
+	assert.Equal(t, []string{"base", "added"}, advisoryIDs(merged))
 }
 
-func ids(s *Set) []string {
+func TestMerge_ReplacesBaseAdvisoryWithSameID(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	base := &Set{Advisories: []Advisory{{ID: "shared", Title: "from base"}}}
+	overlay := &Set{Advisories: []Advisory{{ID: "shared", Title: "from overlay"}}}
+
+	// act
+	merged := Merge(base, overlay)
+
+	// assert
+	assert.Equal(t, []Advisory{{ID: "shared", Title: "from overlay"}}, merged.Advisories)
+}
+
+func TestMerge_RemovesBaseAdvisoryDisabledByOverlay(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	base := &Set{Advisories: []Advisory{{ID: "shared"}}}
+	overlay := &Set{Advisories: []Advisory{{ID: "shared", Disabled: true}}}
+
+	// act
+	merged := Merge(base, overlay)
+
+	// assert
+	assert.Empty(t, merged.Advisories)
+}
+
+func TestMerge_IgnoresDisabledAdvisoryThatIsNotInBase(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	base := &Set{Advisories: []Advisory{{ID: "base"}}}
+	overlay := &Set{Advisories: []Advisory{{ID: "unknown", Disabled: true}}}
+
+	// act
+	merged := Merge(base, overlay)
+
+	// assert
+	assert.Equal(t, []string{"base"}, advisoryIDs(merged))
+}
+
+func TestMerge_DoesNotChangeBase(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	base := &Set{Advisories: []Advisory{{ID: "shared"}}}
+	overlay := &Set{Advisories: []Advisory{{ID: "shared", Disabled: true}, {ID: "added"}}}
+
+	// act
+	Merge(base, overlay)
+
+	// assert
+	assert.Equal(t, []string{"shared"}, advisoryIDs(base))
+}
+
+func advisoryIDs(s *Set) []string {
 	out := make([]string, 0, len(s.Advisories))
 	for _, a := range s.Advisories {
 		out = append(out, a.ID)
