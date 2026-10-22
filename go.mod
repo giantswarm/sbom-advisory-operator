@@ -90,7 +90,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/kubescape/go-logger v0.0.35 // indirect
 	github.com/kubescape/k8s-interface v0.0.214 // indirect
 	github.com/mackerelio/go-osstat v0.2.5 // indirect
