@@ -17,6 +17,7 @@ Evaluates kubescape SBOMs against package version floors and publishes PolicyRep
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | registry.domain | string | `"gsoci.azurecr.io"` |  |
 | replicas | int | `1` |  |
+| ciliumNetworkPolicy.enabled | bool | `false` |  |
 | advisories | list | `[]` |  |
 | kubescapeDiscoveryInterval | string | `"60s"` |  |
 | resources.requests.cpu | string | `"100m"` |  |

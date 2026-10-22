@@ -19,7 +19,12 @@
         },
         "ciliumNetworkPolicy": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
         },
         "cluster": {
             "type": "object",
