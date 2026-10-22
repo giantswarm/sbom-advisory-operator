@@ -226,6 +226,24 @@
                 }
             }
         },
+        "serviceMonitor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Create the ServiceMonitor."
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "Scrape interval."
+                },
+                "scrapeTimeout": {
+                    "type": "string",
+                    "description": "Scrape timeout."
+                }
+            }
+        },
         "subscriptionID": {
             "type": "string"
         },

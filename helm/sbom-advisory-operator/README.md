@@ -43,6 +43,9 @@ Evaluates kubescape SBOMs against package version floors and publishes PolicyRep
 | policyReporterServiceMonitor.port | string | `"http"` | Named Service port that serves /metrics. |
 | policyReporterServiceMonitor.interval | duration | `"60s"` | Scrape interval. |
 | policyReporterServiceMonitor.scrapeTimeout | duration | `"45s"` | Scrape timeout. |
+| serviceMonitor.enabled | bool | `true` | Create the ServiceMonitor. |
+| serviceMonitor.interval | duration | `"60s"` | Scrape interval. |
+| serviceMonitor.scrapeTimeout | duration | `"45s"` | Scrape timeout. |
 
 ## CI values
 

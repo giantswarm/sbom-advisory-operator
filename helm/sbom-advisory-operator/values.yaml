@@ -75,3 +75,13 @@ policyReporterServiceMonitor:
   interval: 60s
   # -- (duration) Scrape timeout.
   scrapeTimeout: 45s
+
+# ServiceMonitor for the operator's own controller-runtime metrics (default observability tenant).
+# Rendered only on clusters that serve monitoring.coreos.com/v1.
+serviceMonitor:
+  # -- Create the ServiceMonitor.
+  enabled: true
+  # -- (duration) Scrape interval.
+  interval: 60s
+  # -- (duration) Scrape timeout.
+  scrapeTimeout: 45s
