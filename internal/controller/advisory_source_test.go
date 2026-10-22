@@ -1,28 +1,30 @@
 package controller
 
 import (
-	"context"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
 )
 
 const (
-	defaultAdvisoryID = "emudhra-2026-10"
-	defaultPlusTest   = "emudhra-2026-10,test-1"
+	builtInAdvisoryID     = "emudhra-2026-10"
+	advisoryNamespace     = "ops"
+	advisoryConfigMapName = "advisories"
+	advisoryKey           = "advisories.yaml"
 )
 
-const testAdvisoryYAML = `advisories:
-  - id: test-1
-    title: test
+const extraAdvisoryYAML = `
+advisories:
+  - id: extra-advisory
+    title: Extra advisory
     severity: low
-    category: Test
     rules:
       - name: certifi
         match: {type: python, names: [certifi]}
@@ -31,102 +33,177 @@ const testAdvisoryYAML = `advisories:
         floors: {"*": "2099.1.1"}
 `
 
-func advisoryConfigMap(name, key, data string) *corev1.ConfigMap {
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ops"}}
-	if key != "" {
-		cm.Data = map[string]string{key: data}
-	}
-	return cm
+const disableBuiltInYAML = `
+advisories:
+  - id: emudhra-2026-10
+    disabled: true
+`
+
+func TestAdvisorySource_ServesBuiltInAdvisoryBeforeLoad(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	current := source.Current()
+
+	// assert
+	assert.Equal(t, []string{builtInAdvisoryID}, advisoryIDs(current))
 }
 
-func TestAdvisorySourceDefaultUntilLoaded(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	if got := ids(src.Current()); len(got) != 1 || got[0] != defaultAdvisoryID {
-		t.Errorf("Current() = %v", got)
+func TestAdvisorySource_Load_AddsConfigMapAdvisoriesToBuiltIn(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	err := source.Load(advisoryConfigMap(extraAdvisoryYAML))
+
+	// assert
+	require.NoError(t, err)
+	assert.Equal(t, []string{builtInAdvisoryID, "extra-advisory"}, advisoryIDs(source.Current()))
+}
+
+func TestAdvisorySource_Load_DisablesBuiltInAdvisory(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	err := source.Load(advisoryConfigMap(disableBuiltInYAML))
+
+	// assert
+	require.NoError(t, err)
+	assert.Empty(t, advisoryIDs(source.Current()))
+}
+
+func TestAdvisorySource_Load_KeepsPreviousAdvisoriesWhenYAMLIsInvalid(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+	require.NoError(t, source.Load(advisoryConfigMap(extraAdvisoryYAML)))
+
+	// act
+	err := source.Load(advisoryConfigMap("advisories: ["))
+
+	// assert
+	require.Error(t, err)
+	assert.Equal(t, []string{builtInAdvisoryID, "extra-advisory"}, advisoryIDs(source.Current()))
+}
+
+func TestAdvisorySource_Load_RecordsWarningEventWhenYAMLIsInvalid(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	recorder := events.NewFakeRecorder(1)
+	source := newTestAdvisorySource(recorder)
+
+	// act
+	_ = source.Load(advisoryConfigMap("advisories: ["))
+
+	// assert
+	require.Len(t, recorder.Events, 1)
+	event := <-recorder.Events
+	assert.Contains(t, event, "Warning")
+	assert.Contains(t, event, "InvalidAdvisories")
+}
+
+func TestAdvisorySource_Load_FallsBackToBuiltInWhenKeyIsMissing(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+	require.NoError(t, source.Load(advisoryConfigMap(extraAdvisoryYAML)))
+	withoutKey := advisoryConfigMap("")
+	withoutKey.Data = nil
+
+	// act
+	err := source.Load(withoutKey)
+
+	// assert
+	require.NoError(t, err)
+	assert.Equal(t, []string{builtInAdvisoryID}, advisoryIDs(source.Current()))
+}
+
+func TestAdvisorySource_Reset_FallsBackToBuiltIn(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	source := newTestAdvisorySource(events.NewFakeRecorder(1))
+	require.NoError(t, source.Load(advisoryConfigMap(extraAdvisoryYAML)))
+
+	// act
+	source.Reset()
+
+	// assert
+	assert.Equal(t, []string{builtInAdvisoryID}, advisoryIDs(source.Current()))
+}
+
+func TestEnqueueAllSBOMs_QueuesEverySBOMWhenAdvisoryConfigMapChanges(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	cm := advisoryConfigMap(extraAdvisoryYAML)
+	c := newFakeClient(t, newSBOM("first"), newSBOM("second"), newSBOM("third"), cm)
+	r := newTestReconciler(c, nil)
+	r.Source = newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	requests := r.enqueueAllSBOMs(t.Context(), cm)
+
+	// assert
+	assert.ElementsMatch(t, []reconcile.Request{requestFor("first"), requestFor("second"), requestFor("third")}, requests)
+}
+
+func TestEnqueueAllSBOMs_LoadsChangedAdvisoryConfigMap(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	cm := advisoryConfigMap(extraAdvisoryYAML)
+	c := newFakeClient(t, cm)
+	r := newTestReconciler(c, nil)
+	r.Source = newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	r.enqueueAllSBOMs(t.Context(), cm)
+
+	// assert
+	assert.Equal(t, []string{builtInAdvisoryID, "extra-advisory"}, advisoryIDs(r.Source.Current()))
+}
+
+func TestEnqueueAllSBOMs_IgnoresOtherConfigMaps(t *testing.T) {
+	t.Parallel()
+
+	// arrange
+	other := advisoryConfigMap(extraAdvisoryYAML)
+	other.Name = "unrelated"
+	c := newFakeClient(t, newSBOM("first"), other)
+	r := newTestReconciler(c, nil)
+	r.Source = newTestAdvisorySource(events.NewFakeRecorder(1))
+
+	// act
+	requests := r.enqueueAllSBOMs(t.Context(), other)
+
+	// assert
+	assert.Empty(t, requests)
+}
+
+func newTestAdvisorySource(recorder events.EventRecorder) *AdvisorySource {
+	return NewAdvisorySource(advisoryNamespace, advisoryConfigMapName, advisoryKey, recorder)
+}
+
+func advisoryConfigMap(advisoriesYAML string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: advisoryConfigMapName, Namespace: advisoryNamespace},
+		Data:       map[string]string{advisoryKey: advisoriesYAML},
 	}
 }
 
-func TestAdvisorySourceLoadMergesOverDefault(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)); err != nil {
-		t.Fatal(err)
-	}
-	if got := ids(src.Current()); strings.Join(got, ",") != defaultPlusTest {
-		t.Errorf("Current() = %v", got)
-	}
-}
-
-func TestAdvisorySourceLoadDisablesBuiltin(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", "advisories:\n- id: emudhra-2026-10\n  disabled: true\n")); err != nil {
-		t.Fatal(err)
-	}
-	if got := ids(src.Current()); len(got) != 0 {
-		t.Errorf("Current() = %v, want none", got)
-	}
-}
-
-func TestAdvisorySourceKeepsLastGoodOnInvalid(t *testing.T) {
-	rec := events.NewFakeRecorder(4)
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", rec)
-	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)); err != nil {
-		t.Fatal(err)
-	}
-	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", "advisories: [")); err == nil {
-		t.Fatal("expected an error for invalid YAML")
-	}
-	if got := ids(src.Current()); strings.Join(got, ",") != defaultPlusTest {
-		t.Errorf("Current() after invalid load = %v", got)
-	}
-	select {
-	case ev := <-rec.Events:
-		if !strings.Contains(ev, "InvalidAdvisories") {
-			t.Errorf("event = %q, want reason InvalidAdvisories", ev)
-		}
-	default:
-		t.Error("no event recorded")
-	}
-}
-
-func TestAdvisorySourceMissingKeyFallsBackToDefault(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	_ = src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML))
-	if err := src.Load(advisoryConfigMap("advisories", "", "")); err != nil {
-		t.Fatal(err)
-	}
-	if got := ids(src.Current()); strings.Join(got, ",") != defaultAdvisoryID {
-		t.Errorf("Current() = %v", got)
-	}
-}
-
-func TestAdvisorySourceResetOnDelete(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	_ = src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML))
-	src.Reset()
-	if got := ids(src.Current()); strings.Join(got, ",") != defaultAdvisoryID {
-		t.Errorf("Current() = %v", got)
-	}
-}
-
-func TestConfigMapChangeEnqueuesAllSBOMs(t *testing.T) {
-	cm := advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(readySBOM("a"), readySBOM("b"), readySBOM("c"), cm).Build()
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
-	r := &SBOMSyftReconciler{Client: c, Reader: c, Advisories: src.Current, Now: metav1.Now, Source: src}
-
-	reqs := r.enqueueAllSBOMs(context.Background(), cm)
-	if len(reqs) != 3 {
-		t.Fatalf("got %d requests, want 3: %v", len(reqs), reqs)
-	}
-	if got := ids(src.Current()); strings.Join(got, ",") != defaultPlusTest {
-		t.Errorf("Load was not applied: %v", got)
-	}
-	if reqs = r.enqueueAllSBOMs(context.Background(), advisoryConfigMap("other", "advisories.yaml", testAdvisoryYAML)); len(reqs) != 0 {
-		t.Errorf("unrelated ConfigMap produced %d requests", len(reqs))
-	}
-}
-
-func ids(s *advisory.Set) []string {
+func advisoryIDs(s *advisory.Set) []string {
 	out := make([]string, 0, len(s.Advisories))
 	for _, a := range s.Advisories {
 		out = append(out, a.ID)
