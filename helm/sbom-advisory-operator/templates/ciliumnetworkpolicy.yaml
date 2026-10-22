@@ -1,6 +1,7 @@
-{{- if .Values.ciliumNetworkPolicy.enabled }}
-# The giantswarm namespace of a management cluster denies all traffic by default: the operator
-# needs the API server, and Prometheus and the kubelet need its metrics and probe ports.
+{{- if and .Values.ciliumNetworkPolicy.enabled (.Capabilities.APIVersions.Has "cilium.io/v2") }}
+# A Giant Swarm namespace may deny all traffic by default: the operator needs the API server, and
+# Prometheus and the kubelet need its metrics and probe ports. Skipped on a cluster without the
+# Cilium API (the chart test's kind cluster).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
