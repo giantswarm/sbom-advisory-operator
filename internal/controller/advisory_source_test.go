@@ -7,7 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
@@ -40,14 +40,14 @@ func advisoryConfigMap(name, key, data string) *corev1.ConfigMap {
 }
 
 func TestAdvisorySourceDefaultUntilLoaded(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	if got := ids(src.Current()); len(got) != 1 || got[0] != defaultAdvisoryID {
 		t.Errorf("Current() = %v", got)
 	}
 }
 
 func TestAdvisorySourceLoadMergesOverDefault(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestAdvisorySourceLoadMergesOverDefault(t *testing.T) {
 }
 
 func TestAdvisorySourceLoadDisablesBuiltin(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", "advisories:\n- id: emudhra-2026-10\n  disabled: true\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestAdvisorySourceLoadDisablesBuiltin(t *testing.T) {
 }
 
 func TestAdvisorySourceKeepsLastGoodOnInvalid(t *testing.T) {
-	rec := record.NewFakeRecorder(4)
+	rec := events.NewFakeRecorder(4)
 	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", rec)
 	if err := src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestAdvisorySourceKeepsLastGoodOnInvalid(t *testing.T) {
 }
 
 func TestAdvisorySourceMissingKeyFallsBackToDefault(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	_ = src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML))
 	if err := src.Load(advisoryConfigMap("advisories", "", "")); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestAdvisorySourceMissingKeyFallsBackToDefault(t *testing.T) {
 }
 
 func TestAdvisorySourceResetOnDelete(t *testing.T) {
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	_ = src.Load(advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML))
 	src.Reset()
 	if got := ids(src.Current()); strings.Join(got, ",") != defaultAdvisoryID {
@@ -111,7 +111,7 @@ func TestAdvisorySourceResetOnDelete(t *testing.T) {
 func TestConfigMapChangeEnqueuesAllSBOMs(t *testing.T) {
 	cm := advisoryConfigMap("advisories", "advisories.yaml", testAdvisoryYAML)
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(readySBOM("a"), readySBOM("b"), readySBOM("c"), cm).Build()
-	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", record.NewFakeRecorder(4))
+	src := NewAdvisorySource("ops", "advisories", "advisories.yaml", events.NewFakeRecorder(4))
 	r := &SBOMSyftReconciler{Client: c, Reader: c, Advisories: src.Current, Now: metav1.Now, Source: src}
 
 	reqs := r.enqueueAllSBOMs(context.Background(), cm)

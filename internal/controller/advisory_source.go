@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	"github.com/giantswarm/sbom-advisory-operator/internal/advisory"
 )
@@ -20,13 +20,13 @@ type AdvisorySource struct {
 	Name      string
 	Key       string
 
-	recorder record.EventRecorder
+	recorder events.EventRecorder
 	mu       sync.RWMutex
 	current  *advisory.Set
 }
 
 // NewAdvisorySource returns a source serving the built-in default until Load is called.
-func NewAdvisorySource(namespace, name, key string, recorder record.EventRecorder) *AdvisorySource {
+func NewAdvisorySource(namespace, name, key string, recorder events.EventRecorder) *AdvisorySource {
 	return &AdvisorySource{Namespace: namespace, Name: name, Key: key, recorder: recorder, current: advisory.Default()}
 }
 
@@ -54,7 +54,7 @@ func (a *AdvisorySource) Load(cm *corev1.ConfigMap) error {
 	overlay, err := advisory.Parse([]byte(data))
 	if err != nil {
 		if a.recorder != nil {
-			a.recorder.Eventf(cm, corev1.EventTypeWarning, EventReasonInvalidAdvisories, "advisories in key %q rejected, keeping the previous set: %v", a.Key, err)
+			a.recorder.Eventf(cm, nil, corev1.EventTypeWarning, EventReasonInvalidAdvisories, "Load", "advisories in key %q rejected, keeping the previous set: %v", a.Key, err)
 		}
 		return fmt.Errorf("advisories in ConfigMap %s/%s key %q: %w", cm.Namespace, cm.Name, a.Key, err)
 	}

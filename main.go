@@ -116,7 +116,7 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
-	source := controller.NewAdvisorySource(advisoriesNamespace, advisoriesName, advisoriesKey, mgr.GetEventRecorderFor("sbom-advisory-operator"))
+	source := controller.NewAdvisorySource(advisoriesNamespace, advisoriesName, advisoriesKey, mgr.GetEventRecorder("sbom-advisory-operator"))
 	reconciler := &controller.SBOMSyftReconciler{
 		Client:     mgr.GetClient(),
 		Reader:     mgr.GetAPIReader(),
