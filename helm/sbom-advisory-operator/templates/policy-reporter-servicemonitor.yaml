@@ -1,0 +1,33 @@
+{{- if and .Values.policyReporterServiceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+# Scrapes policy-reporter for this operator's PolicyReport results only and routes them to the security observability tenant.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "name" . }}-policy-reporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labels.common" . | nindent 4 }}
+    observability.giantswarm.io/tenant: {{ .Values.policyReporterServiceMonitor.tenant | quote }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.policyReporterServiceMonitor.namespace }}
+  selector:
+    matchLabels:
+      {{- toYaml .Values.policyReporterServiceMonitor.serviceSelector | nindent 6 }}
+  endpoints:
+    - port: {{ .Values.policyReporterServiceMonitor.port }}
+      path: /metrics
+      interval: {{ .Values.policyReporterServiceMonitor.interval }}
+      scrapeTimeout: {{ .Values.policyReporterServiceMonitor.scrapeTimeout }}
+      relabelings:
+        - action: labeldrop
+          regex: pod|service|container
+        - action: replace
+          targetLabel: instance
+          replacement: policy-reporter
+      metricRelabelings:
+        - action: keep
+          sourceLabels: [__name__, source]
+          regex: policy_report_result;sbom-advisory-operator
+{{- end }}

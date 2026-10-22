@@ -36,6 +36,16 @@ Evaluates kubescape SBOMs against package version floors and publishes PolicyRep
 | containerSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
 | nodeSelector | object | `{}` |  |
 | tolerations | list | `[]` |  |
+| policyReporterServiceMonitor.enabled | bool | `true` | Create the ServiceMonitor. |
+| policyReporterServiceMonitor.tenant | string | `"giantswarm_security_default"` | Observability tenant the findings are written to (label observability.giantswarm.io/tenant). |
+| policyReporterServiceMonitor.namespace | string | `"kyverno"` | Namespace of the policy-reporter Service. |
+| policyReporterServiceMonitor.serviceSelector | object | `{"app.kubernetes.io/instance":"kyverno","app.kubernetes.io/name":"policy-reporter"}` | Labels selecting the policy-reporter Service. |
+| policyReporterServiceMonitor.port | string | `"http"` | Named Service port that serves /metrics. |
+| policyReporterServiceMonitor.interval | duration | `"60s"` | Scrape interval. |
+| policyReporterServiceMonitor.scrapeTimeout | duration | `"45s"` | Scrape timeout. |
+| serviceMonitor.enabled | bool | `true` | Create the ServiceMonitor. |
+| serviceMonitor.interval | duration | `"60s"` | Scrape interval. |
+| serviceMonitor.scrapeTimeout | duration | `"45s"` | Scrape timeout. |
 
 ## CI values
 
