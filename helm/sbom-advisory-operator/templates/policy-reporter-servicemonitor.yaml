@@ -1,8 +1,5 @@
 {{- if and .Values.policyReporterServiceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
-# Scrapes policy-reporter for this operator's PolicyReport results only and routes them to the
-# security observability tenant: the tenant label is what the platform's metrics agent keys its
-# per-tenant discovery on, so the series land in that tenant and not in the default one. Skipped on
-# a cluster without the Prometheus Operator API (the chart test's kind cluster).
+# Scrapes policy-reporter for this operator's PolicyReport results only and routes them to the security observability tenant.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

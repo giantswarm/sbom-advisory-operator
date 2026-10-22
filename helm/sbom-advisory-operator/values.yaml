@@ -55,9 +55,7 @@ containerSecurityContext:
 nodeSelector: {}
 tolerations: []
 
-# ServiceMonitor that scrapes policy-reporter for this operator's PolicyReport results and routes
-# them to the security observability tenant. Only policy_report_result{source="sbom-advisory-operator"}
-# is kept. Rendered only on clusters that serve monitoring.coreos.com/v1.
+# ServiceMonitor that scrapes Kyverno policy-reporter for this operator's PolicyReport results.
 policyReporterServiceMonitor:
   # -- Create the ServiceMonitor.
   enabled: true
@@ -76,8 +74,7 @@ policyReporterServiceMonitor:
   # -- (duration) Scrape timeout.
   scrapeTimeout: 45s
 
-# ServiceMonitor for the operator's own controller-runtime metrics (default observability tenant).
-# Rendered only on clusters that serve monitoring.coreos.com/v1.
+# ServiceMonitor for the operator's controller-runtime metrics.
 serviceMonitor:
   # -- Create the ServiceMonitor.
   enabled: true

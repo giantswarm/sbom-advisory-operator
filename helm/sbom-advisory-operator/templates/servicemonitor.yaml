@@ -1,7 +1,5 @@
 {{- if and .Values.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
-# The operator's own controller-runtime metrics: operational data, so only the common labels and
-# therefore the default observability tenant. Skipped on a cluster without the Prometheus Operator
-# API (the chart test's kind cluster).
+# Scrape operator controller-runtime metrics.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
