@@ -3,6 +3,9 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+        "advisories": {
+            "type": "array"
+        },
         "baseDomain": {
             "type": "string"
         },
@@ -34,6 +37,45 @@
         "clusterID": {
             "type": "string"
         },
+        "containerSecurityContext": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "allowPrivilegeEscalation": {
+                    "type": "boolean"
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "drop": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "privileged": {
+                    "type": "boolean"
+                },
+                "readOnlyRootFilesystem": {
+                    "type": "boolean"
+                },
+                "runAsNonRoot": {
+                    "type": "boolean"
+                },
+                "seccompProfile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "gcpProject": {
             "type": "string"
         },
@@ -52,8 +94,42 @@
                 "name": {
                     "type": "string"
                 },
+                "pullPolicy": {
+                    "type": "string"
+                },
                 "tag": {
                     "type": "string"
+                }
+            }
+        },
+        "kubescapeDiscoveryInterval": {
+            "type": "string"
+        },
+        "nodeSelector": {
+            "type": "object",
+            "additionalProperties": false
+        },
+        "podSecurityContext": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "runAsGroup": {
+                    "type": "integer"
+                },
+                "runAsNonRoot": {
+                    "type": "boolean"
+                },
+                "runAsUser": {
+                    "type": "integer"
+                },
+                "seccompProfile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         },
@@ -69,8 +145,44 @@
                 }
             }
         },
+        "replicas": {
+            "type": "integer"
+        },
+        "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "cpu": {
+                            "type": "string"
+                        },
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "requests": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "cpu": {
+                            "type": "string"
+                        },
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "subscriptionID": {
             "type": "string"
+        },
+        "tolerations": {
+            "type": "array"
         }
     }
 }

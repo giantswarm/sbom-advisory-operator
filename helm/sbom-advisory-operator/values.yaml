@@ -5,8 +5,49 @@
 #
 #   https://docs.giantswarm.io/tutorials/fleet-management/app-platform/app-configuration/#basic-values-merging-example
 #
+
 image:
   name: "giantswarm/sbom-advisory-operator"
   tag: ""
+  pullPolicy: IfNotPresent
 registry:
   domain: gsoci.azurecr.io
+
+replicas: 1
+
+# Additional advisories, merged over the built-in set by advisory id. An entry with the id of a
+# built-in advisory replaces it; `{id: <built-in id>, disabled: true}` removes it. See the README
+# for the rule schema.
+advisories: []
+
+# How often the operator looks for the kubescape storage API while it is absent from the cluster.
+kubescapeDiscoveryInterval: 60s
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 100m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+nodeSelector: {}
+tolerations: []

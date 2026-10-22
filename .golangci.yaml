@@ -1,0 +1,10 @@
+version: "2"
+
+linters:
+  exclusions:
+    rules:
+      # Test tables repeat fixture values (versions, image names, annotation keys) on purpose;
+      # turning each into a constant would hide what the case checks.
+      - path: _test\.go
+        linters:
+          - goconst

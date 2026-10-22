@@ -1,0 +1,7 @@
+# gitleaks v8 configuration for the giantswarm/gitleaks-action run on every pull request.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Graveler validation data that lived here in earlier commits of the mvp branch: image tags such as cluster-api-aws-controller:v2.11.1-gs-6d635ed37 match generic-api-key but are no secrets"
+paths = ['''^docs/superpowers/specs/reference/''']
