@@ -19,12 +19,12 @@ advisories:
                  "26.04": "20260816ubuntu0.26.04.1", "26.10": "20260816ubuntu0.26.10.1"}
         missingSeries: unknown
       - name: os-ca-certificates-alpine
-        match: {type: apk, names: [ca-certificates], distro: alpine}
+        match: {type: apk, names: [ca-certificates, ca-certificates-bundle], distro: alpine}
         series: none
         compare: apk
         floors: {"*": "20261020-r0"}
       - name: os-ca-certificates-wolfi
-        match: {type: apk, names: [ca-certificates], distro: wolfi}
+        match: {type: apk, names: [ca-certificates, ca-certificates-bundle], distro: wolfi}
         series: none
         compare: apk
         floors: {"*": "20260909-r3"}

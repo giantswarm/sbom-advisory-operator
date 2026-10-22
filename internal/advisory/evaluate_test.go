@@ -27,6 +27,8 @@ func TestEvaluateGraveler(t *testing.T) {
 		{Distro{"alpine", "3.22.2"}, Package{"ca-certificates", "20250911-r0", "apk"}, "os-ca-certificates-alpine", VerdictFail, "20261020-r0"},
 		{Distro{"alpine", "3.24.2"}, Package{"ca-certificates", "20261020-r0", "apk"}, "os-ca-certificates-alpine", VerdictPass, "20261020-r0"},
 		{Distro{"wolfi", "20230201"}, Package{"ca-certificates", "20260909-r2", "apk"}, "os-ca-certificates-wolfi", VerdictFail, "20260909-r3"},
+		{Distro{"alpine", "3.22.2"}, Package{"ca-certificates-bundle", "20250911-r0", "apk"}, "os-ca-certificates-alpine", VerdictFail, "20261020-r0"},
+		{Distro{"wolfi", "20230201"}, Package{"ca-certificates-bundle", "20260909-r1", "apk"}, "os-ca-certificates-wolfi", VerdictFail, "20260909-r3"},
 		{Distro{"amzn", "2023"}, Package{"ca-certificates", "2025.2.76-1.0.amzn2023.0.3", "rpm"}, "os-ca-certificates-rpm", VerdictUnknown, ""},
 		{Distro{}, Package{"certifi", "2026.7.22", "python"}, "python-certifi", VerdictFail, "2026.10.19"},
 		{Distro{}, Package{"certifi", "2026.10.19", "python"}, "python-certifi", VerdictPass, "2026.10.19"},
