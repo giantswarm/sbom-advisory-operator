@@ -214,7 +214,7 @@ func TestMerge(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the failing evaluate tests (values from `reference/check.txt`)**
+- [ ] **Step 2: Write the failing evaluate tests (values from the graveler validation data (kept outside the repository, see the spec))**
 
 ```go
 func evalOne(t *testing.T, distro Distro, p Package) Result  // helper: Default().Evaluate(Input{Image:"img", Distro: distro, Packages: []Package{p}}) must return exactly one Result
@@ -545,7 +545,7 @@ Wait for the architect pipeline to publish `gsoci.azurecr.io/giantswarm/sbom-adv
 
 Install the chart directly on the graveler MC into namespace `sbom-advisory-operator` with `helm upgrade --install --create-namespace` using the `teleport.giantswarm.io-graveler` context and the CI-built image tag. No App CR for the validation run; catalog installation is part of adding it to the security bundle later.
 
-- [ ] **Step 3: Verify counts against `reference/check.txt`**
+- [ ] **Step 3: Verify counts against the graveler validation data (kept outside the repository, see the spec)**
 
 Run:
 ```bash

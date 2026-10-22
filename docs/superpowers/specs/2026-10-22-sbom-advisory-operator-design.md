@@ -16,12 +16,12 @@ Giant Swarm already use.
 The logic was validated by hand on 2026-10-22 against 200 SBOMSyft objects on the graveler management
 cluster with a Python script. This operator ports that script to Go and runs it continuously.
 
-## Reference data (in `reference/` next to this document)
+## Reference data
 
-- `emudhra_sbom_check.py` — the validated Python logic.
-- `sboms.jsonl` — one line per graveler image: `{name, image, distro{id,versionID,prettyName}, nart,
-  pkgs[{name,version,type}]}` with only the packages the rules care about.
-- `check.txt` — the per-image verdicts (`VERDICT component version image [note]`) and totals.
+- `reference/emudhra_sbom_check.py` (next to this document) — the validated Python logic.
+- The per-image graveler data the script produced (`sboms.jsonl`, `check.txt`) is an inventory of a
+  Giant Swarm management cluster's affected images and is kept outside this public repository (the
+  planning session's folder); the version shapes below and the unit tests carry what the code needs.
 
 Raw version shapes observed there, which the normalisers must handle:
 
@@ -247,10 +247,10 @@ One `PolicyReport` per SBOMSyft, same namespace, same name, owner reference to t
 
 ## Acceptance (MVP done when)
 
-1. `go test ./...` passes with the version-comparison cases taken from `reference/check.txt`.
+1. `go test ./...` passes with the version-comparison cases taken from the graveler validation data.
 2. Deployed on graveler (kubescape present), `kubectl get policyreports -n kubescape -l
    app.kubernetes.io/managed-by=sbom-advisory-operator` returns roughly 200 reports and the totals match
-   `reference/check.txt` within the drift of images that changed since: go-stdlib fail ≈178, certifi
+   the graveler validation data within the drift of images that changed since: go-stdlib fail ≈178, certifi
    fail 7, node fail 5, java fail 1, os-ca-certificates fail ≈138 / warn (unknown) 5 / pass ≈14.
 3. The policy-reporter UI lists source `sbom-advisory-operator` and shows per-result messages for a
    report scoped to an SBOMSyft. If the UI cannot display that scope, record it as the reason to pull pod
