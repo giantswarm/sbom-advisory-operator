@@ -36,6 +36,35 @@ kubectl get policyreports -n kubescape -l app.kubernetes.io/managed-by=sbom-advi
   | jq -r '[.items[].results[] | "\(.rule) \(.result)"] | group_by(.) | map("\(.[0]) \(length)") | .[]'
 ```
 
+## Metrics
+
+The chart ships a ServiceMonitor that scrapes policy-reporter and keeps only
+`policy_report_result{source="sbom-advisory-operator"}`, one series per result with the `policy`,
+`rule`, `status`, `severity` and `category` labels and the SBOMSyft name in `name`. It carries
+`observability.giantswarm.io/tenant: giantswarm_security_default`, so the series are written to the
+security tenant of the management cluster that hosts the cluster: look in the **Giant Swarm
+Security** Grafana organization there. They are not in the Giant Swarm or Shared organizations, not in
+Grafana Cloud, and not readable through Muster's Prometheus tools, which query the default tenant.
+The `policyReporterServiceMonitor` values override the target Service and the tenant; the object is
+omitted on a cluster without the Prometheus Operator CRDs.
+
+```promql
+sum by (cluster_id, rule, status, severity) (policy_report_result{source="sbom-advisory-operator"})
+```
+
+From a management cluster without Grafana:
+
+```sh
+kubectl -n mimir port-forward svc/mimir-gateway 18080:80 &
+curl -s -H 'X-Scope-OrgID: giantswarm_security_default' \
+  http://localhost:18080/prometheus/api/v1/query \
+  --data-urlencode 'query=sum by (cluster_id, rule, status) (policy_report_result{source="sbom-advisory-operator"})'
+```
+
+The operator's own controller-runtime metrics are scraped through the `sbom-advisory-operator`
+Service into the default tenant (`serviceMonitor` values), so they appear in the Giant Swarm
+organization and in Muster like any other platform component.
+
 ## Advisories
 
 Advisories come from two layers merged by `id`: the built-in set embedded in the binary
