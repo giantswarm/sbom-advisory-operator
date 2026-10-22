@@ -2,4 +2,7 @@
 # app-build-suite passes this file to `helm template` (see `helm-template-extra-values` in .abs/main.yaml),
 # so a value the chart marks `required` and cannot default (an external endpoint, say) is filled here.
 # These values are only used by CI; they are never installed.
-{}
+#
+# Keep this file block-style (or empty, as now): the check-values-schema workflow merges it into
+# values.yaml with yq, and a flow-style `{}` here makes yq emit the whole merge in flow style, which is
+# invalid YAML once a nested key carries a helm-docs comment.
