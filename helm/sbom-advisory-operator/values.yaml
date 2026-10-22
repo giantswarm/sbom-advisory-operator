@@ -54,3 +54,24 @@ containerSecurityContext:
 
 nodeSelector: {}
 tolerations: []
+
+# ServiceMonitor that scrapes policy-reporter for this operator's PolicyReport results and routes
+# them to the security observability tenant. Only policy_report_result{source="sbom-advisory-operator"}
+# is kept. Rendered only on clusters that serve monitoring.coreos.com/v1.
+policyReporterServiceMonitor:
+  # -- Create the ServiceMonitor.
+  enabled: true
+  # -- Observability tenant the findings are written to (label observability.giantswarm.io/tenant).
+  tenant: giantswarm_security_default
+  # -- Namespace of the policy-reporter Service.
+  namespace: kyverno
+  # -- Labels selecting the policy-reporter Service.
+  serviceSelector:  # @schema additionalProperties: true
+    app.kubernetes.io/instance: kyverno
+    app.kubernetes.io/name: policy-reporter
+  # -- Named Service port that serves /metrics.
+  port: http
+  # -- (duration) Scrape interval.
+  interval: 60s
+  # -- (duration) Scrape timeout.
+  scrapeTimeout: 45s

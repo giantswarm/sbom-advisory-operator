@@ -138,6 +138,49 @@
                 }
             }
         },
+        "policyReporterServiceMonitor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Create the ServiceMonitor."
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "Scrape interval."
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "Namespace of the policy-reporter Service."
+                },
+                "port": {
+                    "type": "string",
+                    "description": "Named Service port that serves /metrics."
+                },
+                "scrapeTimeout": {
+                    "type": "string",
+                    "description": "Scrape timeout."
+                },
+                "serviceSelector": {
+                    "type": "object",
+                    "description": "Labels selecting the policy-reporter Service.",
+                    "additionalProperties": true,
+                    "properties": {
+                        "app.kubernetes.io/instance": {
+                            "type": "string"
+                        },
+                        "app.kubernetes.io/name": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "tenant": {
+                    "type": "string",
+                    "description": "Observability tenant the findings are written to (label observability.giantswarm.io/tenant)."
+                }
+            }
+        },
         "provider": {
             "type": "string"
         },
