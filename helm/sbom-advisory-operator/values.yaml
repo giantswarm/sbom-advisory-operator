@@ -15,8 +15,6 @@ registry:
 
 replicas: 1
 
-# Allow the operator to reach the API server, and its metrics and probe ports to be reached, in a
-# namespace that denies all traffic by default. Only rendered where the Cilium API exists.
 ciliumNetworkPolicy:
   enabled: true
 
