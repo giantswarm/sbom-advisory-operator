@@ -15,6 +15,9 @@ registry:
 
 replicas: 1
 
+ciliumNetworkPolicy:
+  enabled: true
+
 # Additional advisories, merged over the built-in set by advisory id. An entry with the id of a
 # built-in advisory replaces it; `{id: <built-in id>, disabled: true}` removes it. See the README
 # for the rule schema.
