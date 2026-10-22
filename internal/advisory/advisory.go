@@ -124,6 +124,11 @@ func (r *Rule) validate() error {
 	if r.Floors == nil {
 		r.Floors = map[string]string{}
 	}
+	for series, floor := range r.Floors {
+		if _, err := Compare(r.Compare, floor, floor); err != nil {
+			return fmt.Errorf("floor %q for series %q cannot be parsed by the %s comparator: %w", floor, series, r.Compare, err)
+		}
+	}
 	return nil
 }
 

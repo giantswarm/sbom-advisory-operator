@@ -9,6 +9,7 @@ import (
 	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -45,6 +46,21 @@ type watchListSemanticsDisabledListerWatcherWrapper struct {
 
 func (w watchListSemanticsDisabledListerWatcherWrapper) IsWatchListSemanticsUnSupported() bool {
 	return true
+}
+
+// cacheOptions bounds what the manager caches: ConfigMaps only in the advisory namespace (so a
+// namespaced Role suffices) and PolicyReports only those this operator wrote (a cluster running
+// Kyverno holds thousands of other reports). The WatchList opt-out applies to every informer.
+func cacheOptions(advisoriesNamespace string) cache.Options {
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}:      {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
+			&v1alpha2.PolicyReport{}: {Label: labels.SelectorFromSet(labels.Set{"app.kubernetes.io/managed-by": controller.Source})},
+		},
+		NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
+			return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)
+		},
+	}
 }
 
 func main() {
@@ -90,15 +106,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "sbom-advisory-operator.giantswarm.io",
-		Cache: cache.Options{
-			// Only the advisory ConfigMap's namespace is watched, so a namespaced Role suffices.
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.ConfigMap{}: {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
-			},
-			NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
-				return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)
-			},
-		},
+		Cache:                  cacheOptions(advisoriesNamespace),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

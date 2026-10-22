@@ -44,6 +44,8 @@ func TestParseRejects(t *testing.T) {
 		{"dup advisory", "advisories:\n- id: a\n  severity: low\n- id: a\n  severity: low\n", "id"},
 		{"severity", "advisories:\n- id: a\n  severity: urgent\n", "severity"},
 		{"yaml", "advisories: [", "yaml"},
+		{"floor numeric", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: python, names: [x]}\n    series: none\n    compare: numeric\n    floors: {\"*\": \"latest\"}\n", "floor"},
+		{"floor dpkg", "advisories:\n- id: a\n  severity: low\n  rules:\n  - name: r\n    match: {type: deb, names: [x]}\n    series: distro\n    compare: dpkg\n    floors: {\"13\": \"not a version!\"}\n", "floor"},
 	}
 	for _, tc := range cases {
 		_, err := Parse([]byte(tc.yaml))

@@ -12,7 +12,8 @@ without a CVE. The built-in advisory covers the eMudhra intermediate CA compromi
 ## How it works
 
 1. The operator watches `SBOMSyft` objects (`spdx.softwarecomposition.kubescape.io/v1beta1`) as metadata
-   only, and fetches each body uncached when it reconciles. SBOM bodies are never held in memory.
+   only, and fetches each body uncached when it reconciles. An SBOM body is held only for the duration
+   of its reconcile, never in the cache.
 2. Every advisory rule that matches a package in the SBOM yields one result: `pass`, `fail`, or `warn`
    (unknown: no fixed version is known for that distro or runtime series, or the version could not be
    parsed).
@@ -39,10 +40,12 @@ kubectl get policyreports -n kubescape -l app.kubernetes.io/managed-by=sbom-advi
 
 Advisories come from two layers merged by `id`: the built-in set embedded in the binary
 ([`internal/advisory/default_advisories.yaml`](internal/advisory/default_advisories.yaml)) and the
-`advisories` Helm value, rendered into the ConfigMap `<release>-advisories`. A value entry with the id of
+`advisories` Helm value, rendered into the ConfigMap `sbom-advisory-operator-advisories`. A value entry with the id of
 a built-in advisory replaces it; `{id: <built-in id>, disabled: true}` removes it; other entries are
 appended. Changing the ConfigMap re-evaluates every SBOM without a restart. Invalid YAML is rejected
 with a `Warning` Event (`InvalidAdvisories`) on the ConfigMap and the previous set stays in effect.
+Every floor must parse with its rule's comparator, or the whole set is rejected. Result timestamps
+record the evaluation that last changed a report; an unchanged evaluation does not rewrite it.
 
 ```yaml
 advisories:

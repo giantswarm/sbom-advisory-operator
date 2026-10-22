@@ -25,8 +25,11 @@ rules:
       - update
       - patch
       - delete
+  # The ConfigMap warning Events are written through events.k8s.io; leader election
+  # still uses the core events API.
   - apiGroups:
       - ""
+      - events.k8s.io
     resources:
       - events
     verbs:
