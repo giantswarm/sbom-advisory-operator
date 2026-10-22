@@ -9,6 +9,7 @@ import (
 	kubescapev1beta1 "github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -92,8 +93,10 @@ func main() {
 		LeaderElectionID:       "sbom-advisory-operator.giantswarm.io",
 		Cache: cache.Options{
 			// Only the advisory ConfigMap's namespace is watched, so a namespaced Role suffices.
+			// Only this operator's own PolicyReports are cached, because Kyverno and other tools write many more.
 			ByObject: map[client.Object]cache.ByObject{
-				&corev1.ConfigMap{}: {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
+				&corev1.ConfigMap{}:      {Namespaces: map[string]cache.Config{advisoriesNamespace: {}}},
+				&v1alpha2.PolicyReport{}: {Label: labels.SelectorFromSet(labels.Set{"app.kubernetes.io/managed-by": controller.Source})},
 			},
 			NewInformer: func(lw toolscache.ListerWatcher, obj runtime.Object, resync time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
 				return toolscache.NewSharedIndexInformer(watchListSemanticsDisabledListerWatcherWrapper{lw}, obj, resync, indexers)
