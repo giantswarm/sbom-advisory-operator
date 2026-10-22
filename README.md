@@ -52,15 +52,6 @@ omitted on a cluster without the Prometheus Operator CRDs.
 sum by (cluster_id, rule, status, severity) (policy_report_result{source="sbom-advisory-operator"})
 ```
 
-From a management cluster without Grafana:
-
-```sh
-kubectl -n mimir port-forward svc/mimir-gateway 18080:80 &
-curl -s -H 'X-Scope-OrgID: giantswarm_security_default' \
-  http://localhost:18080/prometheus/api/v1/query \
-  --data-urlencode 'query=sum by (cluster_id, rule, status) (policy_report_result{source="sbom-advisory-operator"})'
-```
-
 The operator's own controller-runtime metrics are scraped through the `sbom-advisory-operator`
 Service into the default tenant (`serviceMonitor` values), so they appear in the Giant Swarm
 organization and in Muster like any other platform component.
