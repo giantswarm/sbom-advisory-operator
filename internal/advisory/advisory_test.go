@@ -134,6 +134,36 @@ advisories:
 			errorMentions: "yaml",
 			yaml:          `advisories: [`,
 		},
+		{
+			name:          "floor that the numeric comparator cannot parse",
+			errorMentions: "floor",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: certifi
+        match: {type: python, names: [certifi]}
+        series: none
+        compare: numeric
+        floors: {"*": "latest"}
+`,
+		},
+		{
+			name:          "floor that the dpkg comparator cannot parse",
+			errorMentions: "floor",
+			yaml: `
+advisories:
+  - id: test
+    severity: low
+    rules:
+      - name: ca-certificates
+        match: {type: deb, names: [ca-certificates]}
+        series: distro
+        compare: dpkg
+        floors: {"13": "not a version!"}
+`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
