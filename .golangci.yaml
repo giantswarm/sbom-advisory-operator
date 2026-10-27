@@ -1,6 +1,9 @@
 version: "2"
 
 linters:
+  enable:
+    - gosec
+    - goconst
   exclusions:
     rules:
       # Test tables repeat fixture values (versions, image names, annotation keys) on purpose;
