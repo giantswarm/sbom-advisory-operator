@@ -4,7 +4,7 @@
 
 ### What is the effect of this change to users?
 
-### How does it look like?
+### What does it look like?
 
 (Please add anything that represents the change visually. Screenshots, output, logs, ...)
 
